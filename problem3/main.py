@@ -19,9 +19,9 @@ class SerializableModule(nn.Module):
     def load(self, filename):
         self.load_state_dict(torch.load(filename, map_location=lambda storage, loc: storage))
 
-class BaseModel(SerializableModule):
+class BaseConvNet(SerializableModule):
     def __init__(self):
-        super(BaseModel, self).__init__()
+        super(BaseConvNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 20, 5, 1)
         self.conv2 = nn.Conv2d(20, 50, 5, 1)
         self.fc1 = nn.Linear(13*13*50, 200)
@@ -36,6 +36,35 @@ class BaseModel(SerializableModule):
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
+
+class MyConvNet(SerializableModule):
+    def __init__(self):
+        super(BaseModel, self).__init__()
+        self.conv1 = nn.Conv2d(3, 48, 3, 1)
+        self.fc1 = nn.Linear(4*4*48, 256)
+        self.fc2 = nn.Linear(256, 2)
+
+    def forward(self, x):
+        # 2 convs, 1 maxpool
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+
+        # 2 convs, 1 maxpool
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+
+        # 2 convs, 1 maxpool
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+
+        x = x.view(-1, 4*4*48)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
 
 def configure_arguments():
     parser = argparse.ArgumentParser(description='PyTorch Cat/Dog classification project')
@@ -86,8 +115,8 @@ def create_dataloaders(args):
     train_dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose([
-            # transforms.RandomResizedCrop(224),
-            # transforms.RandomHorizontalFlip(),
+            transforms.RandomResizedCrop(64, scale=(0.8,1.0)),
+            transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
         ]))
@@ -98,16 +127,16 @@ def create_dataloaders(args):
 
     val_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(valdir, transforms.Compose([
-            # transforms.Resize(256),
-            # transforms.CenterCrop(224),
+            #transforms.Resize(80),
+            #transforms.CenterCrop(64),
             transforms.ToTensor(),
             normalize,
         ])),
         batch_size=args.test_batch_size, shuffle=False)
     test_loader = torch.utils.data.DataLoader(
         datasets.ImageFolder(testdir, transforms.Compose([
-            # transforms.Resize(256),
-            # transforms.CenterCrop(224),
+            #transforms.Resize(80),
+            #transforms.CenterCrop(64),
             transforms.ToTensor(),
             normalize,
         ])),
@@ -189,6 +218,7 @@ def test(args, model, device, test_loader):
 
     # load saved model, if any.
     if args.saved_model_path:
+        print('Loading saved model...')
         model.load(args.saved_model_path)
     else:
         raise('No saved model was specified in test mode.')
@@ -239,22 +269,22 @@ def main():
 
     train_loader, val_loader, test_loader = create_dataloaders(args)
 
-    model = BaseModel().to(device)
+    model = BaseConvNet().to(device)
     # model = VGG('VGG11').to(device)
     optimizer = optim.SGD(model.parameters(), lr=args.lr)
 
-    # set up logging.
-    experiment = Experiment(api_key="w7QuiECYXbNiOozveTpjc9uPg", project_name="project1-ac2g", workspace="ift6135")
-    hyper_params = vars(args)
-    experiment.log_parameters(hyper_params)
-
-    # train (if not saved model path is provided)
     if args.mode == 'train':
         print('Running in train mode...')
+
+        #set up logging.
+        experiment = Experiment(api_key="w7QuiECYXbNiOozveTpjc9uPg", project_name="project1-ac2g", workspace="ift6135")
+        hyper_params = vars(args)
+        experiment.log_parameters(hyper_params)
+
         train(args, model, device, (train_loader, val_loader), optimizer, experiment)
     elif args.mode == 'test':
         print('Running in test mode...')
         test(args, model, device, test_loader)
-        
+
 if __name__ == '__main__':
     main()
