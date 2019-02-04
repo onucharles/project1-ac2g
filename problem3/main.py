@@ -8,6 +8,9 @@ import torch.optim as optim
 from torchvision import datasets, transforms
 import os
 import csv
+from pathlib import Path
+import random
+import numpy as np
 
 class SerializableModule(nn.Module):
     def __init__(self):
@@ -33,37 +36,54 @@ class BaseConvNet(SerializableModule):
         x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2, 2)
         x = x.view(-1, 13*13*50)
+
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
 class MyConvNet(SerializableModule):
     def __init__(self):
-        super(BaseModel, self).__init__()
+        super(MyConvNet, self).__init__()
         self.conv1 = nn.Conv2d(3, 48, 3, 1)
-        self.fc1 = nn.Linear(4*4*48, 256)
+        self.conv2 = nn.Conv2d(48, 48, 3, 1)
+        self.fc1 = nn.Linear(13*13*48, 256)
         self.fc2 = nn.Linear(256, 2)
 
     def forward(self, x):
         # 2 convs, 1 maxpool
         x = F.relu(self.conv1(x))
-        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2, 2)
 
         # 2 convs, 1 maxpool
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2, 2)
 
         # 2 convs, 1 maxpool
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv1(x))
-        x = F.max_pool2d(x, 2, 2)
+        # x = F.relu(self.conv2(x))
+        # x = F.relu(self.conv2(x))
+        # x = F.max_pool2d(x, 2, 2)
 
-        x = x.view(-1, 4*4*48)
+        x = x.view(-1, 13*13*48)
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
+
+class ImageFolderWithPaths(datasets.ImageFolder):
+    """Custom dataset that includes image file paths. Extends
+    torchvision.datasets.ImageFolder
+    """
+
+    # override the __getitem__ method. this is the method dataloader calls
+    def __getitem__(self, index):
+        # this is what ImageFolder normally returns
+        original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
+        # the image file path
+        path = self.imgs[index][0]
+        # make a new tuple that includes original and the path
+        tuple_with_path = (original_tuple + (path,))
+        return tuple_with_path
 
 
 def configure_arguments():
@@ -84,7 +104,7 @@ def configure_arguments():
                         help='how many batches to wait before logging training status')
     parser.add_argument('--saved-model-path', type=str, default=None,
                         help='For Saving the current Model')
-    parser.add_argument('--data_dir', type=str, default=r'C:\Users\Charles\Dropbox (NRP)\travaille\classes\IFT6135\Assignments\assignment1\practical\data',
+    parser.add_argument('--data_dir', type=str, default=None,
                         help='root directory where datasets are stored.')
     parser.add_argument('--mode', type=str, default='train', choices=('train', 'test'))
 
@@ -126,17 +146,17 @@ def create_dataloaders(args):
         train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None), sampler=train_sampler)
 
     val_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(valdir, transforms.Compose([
+        ImageFolderWithPaths(valdir, transforms.Compose([
             #transforms.Resize(80),
-            #transforms.CenterCrop(64),
+            # transforms.CenterCrop(64),
             transforms.ToTensor(),
             normalize,
         ])),
         batch_size=args.test_batch_size, shuffle=False)
     test_loader = torch.utils.data.DataLoader(
-        datasets.ImageFolder(testdir, transforms.Compose([
+        ImageFolderWithPaths(testdir, transforms.Compose([
             #transforms.Resize(80),
-            #transforms.CenterCrop(64),
+            # transforms.CenterCrop(64),
             transforms.ToTensor(),
             normalize,
         ])),
@@ -191,7 +211,7 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
                 val_loss = 0
                 val_correct = 0
                 with torch.no_grad():
-                    for data, target in val_loader:
+                    for data, target, paths in val_loader:
                         data, target = data.to(device), target.to(device)
                         output = model(data)
                         val_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
@@ -224,38 +244,49 @@ def test(args, model, device, test_loader):
         raise('No saved model was specified in test mode.')
 
     model.eval()
-    test_loss = 0
+    # test_loss = 0
+    # test_correct = 0
     predictions = []
+    # targets = []
+    img_names = []   # get names of each image without full path or extension. (we need names to order result)
 
     with torch.no_grad():
-        for data, target in test_loader:
+        for batch_idx, (data, target, paths) in enumerate(test_loader):
             data, target = data.to(device), target.to(device)
             output = model(data)
-            #test_loss += F.nll_loss(output, target, reduction='sum').item() # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True) # get the index of the max log-probability
             predictions.append(pred)
-    predictions = torch.cat(predictions, 0)
+            img_names += [Path(path).name.split('.')[0] for path in paths]
+            # targets.append(target)
+            # test_loss += F.nll_loss(output, target, reduction='sum').item() # sum up batch loss
+            # test_correct += pred.eq(target.view_as(pred)).sum().item()
 
+    # I commented it out since we don't have test set targets with which to compute performance metrics.
     # test_loss /= len(test_loader.dataset)
-    # test_acc = 100. * correct / len(test_loader.dataset)
+    # test_acc = 100. * test_correct / len(test_loader.dataset)
     # print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-    #     test_loss, correct, len(test_loader.dataset), test_acc))
+    #     test_loss, test_correct, len(test_loader.dataset), test_acc))
 
     # save predictions
-    save_predictions(predictions)
+    predictions = torch.cat(predictions, 0)
+    save_predictions(img_names, predictions)
 
-def save_predictions(preds):
+def save_predictions(img_names, predictions):
     print('Saving predictions...')
 
-    preds = preds.cpu().numpy()
+    img_names = np.array(img_names)
+    predictions = predictions.cpu().numpy().flatten()
+    result = dict(zip(img_names, predictions))  # combine image name and prediction into a dictionary.
     class_dict = {0: 'Cat', 1: 'Dog'}
 
     with open('output/predictions.csv', 'w', newline='\n') as csvfile:
         csvwriter = csv.writer(csvfile, delimiter=',')
         csvwriter.writerow(['id', 'label'])
 
-        for i in range(preds.shape[0]):
-            csvwriter.writerow([str(i+1), class_dict[preds[i][0]]])
+        for i in range(len(img_names)):
+            id = str(i+1)
+            label = result[id]
+            csvwriter.writerow([id, class_dict[label]])
 
 def main():
     # Training settings
@@ -263,7 +294,12 @@ def main():
 
     use_cuda = not args.no_cuda and torch.cuda.is_available()
 
+    # sets seeds to prevent any unwanted randomness.
     torch.manual_seed(args.seed)
+    if use_cuda:
+        torch.cuda.manual_seed(args.seed)
+    random.seed(args.seed)
+    torch.backends.cudnn.deterministic = True
 
     device = torch.device("cuda" if use_cuda else "cpu")
 
