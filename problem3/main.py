@@ -2,7 +2,7 @@ from __future__ import print_function
 from comet_ml import Experiment
 import argparse
 import torch
-import torch.nn as nn
+# import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms
@@ -11,64 +11,7 @@ import csv
 from pathlib import Path
 import random
 import numpy as np
-
-class SerializableModule(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def save(self, filename):
-        torch.save(self.state_dict(), filename)
-
-    def load(self, filename):
-        self.load_state_dict(torch.load(filename, map_location=lambda storage, loc: storage))
-
-class BaseConvNet(SerializableModule):
-    def __init__(self):
-        super(BaseConvNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, 5, 1)
-        self.conv2 = nn.Conv2d(32, 64, 5, 1)
-        self.fc1 = nn.Linear(13*13*64, 256)
-        self.fc2 = nn.Linear(256, 2)
-
-    def forward(self, x):
-        x = F.relu(self.conv1(x))
-        x = F.max_pool2d(x, 2, 2)
-        x = F.relu(self.conv2(x))
-        x = F.max_pool2d(x, 2, 2)
-        x = x.view(-1, 13*13*64)
-
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
-
-class MyConvNet(SerializableModule):
-    def __init__(self):
-        super(MyConvNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 48, 3, 1)
-        self.conv2 = nn.Conv2d(48, 48, 3, 1)
-        self.fc1 = nn.Linear(13*13*48, 256)
-        self.fc2 = nn.Linear(256, 2)
-
-    def forward(self, x):
-        # 2 convs, 1 maxpool
-        x = F.relu(self.conv1(x))
-        x = F.relu(self.conv2(x))
-        x = F.max_pool2d(x, 2, 2)
-
-        # 2 convs, 1 maxpool
-        x = F.relu(self.conv2(x))
-        x = F.relu(self.conv2(x))
-        x = F.max_pool2d(x, 2, 2)
-
-        # 2 convs, 1 maxpool
-        # x = F.relu(self.conv2(x))
-        # x = F.relu(self.conv2(x))
-        # x = F.max_pool2d(x, 2, 2)
-
-        x = x.view(-1, 13*13*48)
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return F.log_softmax(x, dim=1)
+import models
 
 class ImageFolderWithPaths(datasets.ImageFolder):
     """Custom dataset that includes image file paths. Extends
@@ -77,11 +20,8 @@ class ImageFolderWithPaths(datasets.ImageFolder):
 
     # override the __getitem__ method. this is the method dataloader calls
     def __getitem__(self, index):
-        # this is what ImageFolder normally returns
         original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
-        # the image file path
         path = self.imgs[index][0]
-        # make a new tuple that includes original and the path
         tuple_with_path = (original_tuple + (path,))
         return tuple_with_path
 
@@ -92,7 +32,7 @@ def configure_arguments():
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=5, metavar='N',
+    parser.add_argument('--epochs', type=int, default=10, metavar='N',
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                         help='learning rate (default: 0.01)')
@@ -103,18 +43,12 @@ def configure_arguments():
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
     parser.add_argument('--saved-model-path', type=str, default=None,
-                        help='For Saving the current Model')
+                        help='path of a saved model to load')
     parser.add_argument('--data_dir', type=str, default=None,
                         help='root directory where datasets are stored.')
     parser.add_argument('--mode', type=str, default='train', choices=('train', 'test'))
-
-    # add 'mode' - training or eval. so that we can load saved model for either.
-
-    # model arguments
-    # parser.add_argument('--n_labels', )
-    # parser.add_argument('--n_layers')
-    # parser.add_argument('--n_feature_maps')
-    # parser.add_argument('--res_pool')
+    parser.add_argument('--model', type=str, default='BaseConvNet', choices=('BaseConvNet','VGG'),
+                        help='the model architecture to use during training')
 
     args = parser.parse_args()
     return args
@@ -233,9 +167,9 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
                 if val_acc > max_val_acc:
                     print("\tsaving best model...")
                     max_val_acc = val_acc
-                    # torch.save(model.state_dict(), "saved_model.pt")
-                    model.save("output/saved_model.pt")
-                    experiment.log_asset("output/saved_model.pt", overwrite=True)
+                    model_path = "output/" + args.model + "/saved_model.pt"
+                    model.save(model_path)
+                    experiment.log_asset(model_path, overwrite=True)
 
 def test(args, model, device, test_loader):
 
@@ -308,8 +242,9 @@ def main():
 
     train_loader, val_loader, test_loader = create_dataloaders(args)
 
-    model = BaseConvNet().to(device)
-    # model = VGG('VGG11').to(device)
+    # get instance of model.
+    model_class = models.find_model(args.model)
+    model = model_class().to(device)
     optimizer = optim.SGD(model.parameters(), lr=args.lr)
 
     if args.mode == 'train':
