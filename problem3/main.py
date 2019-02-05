@@ -25,17 +25,17 @@ class SerializableModule(nn.Module):
 class BaseConvNet(SerializableModule):
     def __init__(self):
         super(BaseConvNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 20, 5, 1)
-        self.conv2 = nn.Conv2d(20, 50, 5, 1)
-        self.fc1 = nn.Linear(13*13*50, 200)
-        self.fc2 = nn.Linear(200, 2)
+        self.conv1 = nn.Conv2d(3, 32, 5, 1)
+        self.conv2 = nn.Conv2d(32, 64, 5, 1)
+        self.fc1 = nn.Linear(13*13*64, 256)
+        self.fc2 = nn.Linear(256, 2)
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = F.max_pool2d(x, 2, 2)
         x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2, 2)
-        x = x.view(-1, 13*13*50)
+        x = x.view(-1, 13*13*64)
 
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
@@ -135,7 +135,7 @@ def create_dataloaders(args):
     train_dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose([
-            transforms.RandomResizedCrop(64, scale=(0.8,1.0)),
+            transforms.RandomResizedCrop(64, scale=(0.5,1.0)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
@@ -143,7 +143,9 @@ def create_dataloaders(args):
     train_sampler = None
 
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, batch_size=args.batch_size, shuffle=(train_sampler is None), sampler=train_sampler)
+        train_dataset, batch_size=args.batch_size,
+        shuffle=(train_sampler is None), sampler=train_sampler,
+        num_workers=6)
 
     val_loader = torch.utils.data.DataLoader(
         ImageFolderWithPaths(valdir, transforms.Compose([
@@ -152,7 +154,7 @@ def create_dataloaders(args):
             transforms.ToTensor(),
             normalize,
         ])),
-        batch_size=args.test_batch_size, shuffle=False)
+        batch_size=args.test_batch_size, shuffle=False, num_workers=6)
     test_loader = torch.utils.data.DataLoader(
         ImageFolderWithPaths(testdir, transforms.Compose([
             #transforms.Resize(80),
@@ -233,6 +235,7 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
                     max_val_acc = val_acc
                     # torch.save(model.state_dict(), "saved_model.pt")
                     model.save("output/saved_model.pt")
+                    experiment.log_asset("output/saved_model.pt", overwrite=True)
 
 def test(args, model, device, test_loader):
 
