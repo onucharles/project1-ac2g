@@ -15,9 +15,9 @@ class SerializableModule(nn.Module):
 class BaseConvNet(SerializableModule):
     def __init__(self):
         super(BaseConvNet, self).__init__()
-        self.conv1 = nn.Conv2d(3, 32, 5, 1)
-        self.conv2 = nn.Conv2d(32, 64, 5, 1)
-        self.fc1 = nn.Linear(13*13*64, 256)
+        self.conv1 = nn.Conv2d(3, 64, 5, 1)
+        self.conv2 = nn.Conv2d(64, 128, 5, 1)
+        self.fc1 = nn.Linear(13*13*128, 256)
         self.fc2 = nn.Linear(256, 2)
 
     def forward(self, x):
@@ -25,7 +25,29 @@ class BaseConvNet(SerializableModule):
         x = F.max_pool2d(x, 2, 2)
         x = F.relu(self.conv2(x))
         x = F.max_pool2d(x, 2, 2)
-        x = x.view(-1, 13*13*64)
+        x = x.view(-1, 13*13*128)
+
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
+class BaseConvNet2(SerializableModule):
+    def __init__(self):
+        super(BaseConvNet2, self).__init__()
+        self.conv1 = nn.Conv2d(3, 64, 5, 1)
+        self.conv2 = nn.Conv2d(64, 128, 5, 1)
+        self.conv3 = nn.Conv2d(128, 256, 5, 1)
+        self.fc1 = nn.Linear(4*4*256, 256)
+        self.fc2 = nn.Linear(256, 2)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv3(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(x.size(0), -1)
 
         x = F.relu(self.fc1(x))
         x = self.fc2(x)
@@ -36,13 +58,13 @@ class VGG(SerializableModule):
     def __init__(self, vgg_name='VGG7'):
         super(VGG, self).__init__()
         self.features = self._make_layers(vgg_config[vgg_name])
-        self.classifier = nn.Linear(2048, 2)
+        self.classifier = nn.Linear(16384, 2)
 
     def forward(self, x):
         out = self.features(x)
         out = out.view(out.size(0), -1)
         out = self.classifier(out)
-        return out
+        return F.log_softmax(out, dim=1)
 
     def _make_layers(self, cfg):
         layers = []
@@ -52,14 +74,14 @@ class VGG(SerializableModule):
                 layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
             else:
                 layers += [nn.Conv2d(in_channels, x, kernel_size=3, padding=1),
-                           # nn.BatchNorm2d(x),
+                           nn.BatchNorm2d(x),
                            nn.ReLU(inplace=True)]
                 in_channels = x
         layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
         return nn.Sequential(*layers)
 
 vgg_config = {
-    'VGG7': [64, 'M', 128, 'M', 256, 256, 'M'],
+    'VGG7': [64, 'M', 128, 128, 'M', 256, 256, 'M'],
     'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
     'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
@@ -106,9 +128,9 @@ class ResidualBlock(nn.Module):
         return out
 
 # adapted from https://github.com/MaximumEntropy/welcome_tutorials/blob/pytorch/
-class CIFARResNet18(SerializableModule):
-    def __init__(self, num_classes=10):
-        super(CIFARResNet18, self).__init__()
+class ResNet(SerializableModule):
+    def __init__(self, num_classes=2):
+        super(ResNet, self).__init__()
 
         # Initial input conv
         self.conv1 = nn.Conv2d(
@@ -122,7 +144,7 @@ class CIFARResNet18(SerializableModule):
         self.stage2 = self._create_stage(64, 128, stride=2)
         self.stage3 = self._create_stage(128, 256, stride=2)
         self.stage4 = self._create_stage(256, 512, stride=2)
-        self.linear = nn.Linear(512, num_classes)
+        self.linear = nn.Linear(2048, num_classes)
 
     # A stage is just two residual blocks for ResNet18
     def _create_stage(self, in_channels, out_channels, stride):
@@ -140,13 +162,17 @@ class CIFARResNet18(SerializableModule):
         out = F.avg_pool2d(out, 4)
         out = out.view(out.size(0), -1)
         out = self.linear(out)
-        return out
+        return F.log_softmax(out, dim=1)
 
 def find_model(model_str):
     if model_str == 'VGG':
         return VGG
     elif model_str == 'BaseConvNet':
         return BaseConvNet
+    elif model_str == 'ResNet':
+        return ResNet
+    elif model_str == 'BaseConvNet2':
+        return BaseConvNet2
     else:
         raise("No model with name '" + model_str + "' was found.")
 

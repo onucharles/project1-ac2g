@@ -1,4 +1,5 @@
 from __future__ import print_function
+import comet_ml
 from comet_ml import Experiment
 import argparse
 import torch
@@ -12,6 +13,7 @@ from pathlib import Path
 import random
 import numpy as np
 import models
+from sklearn.externals import joblib
 
 class ImageFolderWithPaths(datasets.ImageFolder):
     """Custom dataset that includes image file paths. Extends
@@ -25,6 +27,10 @@ class ImageFolderWithPaths(datasets.ImageFolder):
         tuple_with_path = (original_tuple + (path,))
         return tuple_with_path
 
+def create_folder(newpath):
+    if not os.path.exists(newpath):
+        os.makedirs(newpath)
+        print("created directory: " + str(newpath))
 
 def configure_arguments():
     parser = argparse.ArgumentParser(description='PyTorch Cat/Dog classification project')
@@ -46,9 +52,13 @@ def configure_arguments():
                         help='path of a saved model to load')
     parser.add_argument('--data_dir', type=str, default=None,
                         help='root directory where datasets are stored.')
-    parser.add_argument('--mode', type=str, default='train', choices=('train', 'test'))
-    parser.add_argument('--model', type=str, default='BaseConvNet', choices=('BaseConvNet','VGG'),
+    parser.add_argument('--mode', type=str, default='train',
+                        choices=('train', 'test'))
+    parser.add_argument('--model', type=str, default='BaseConvNet',
+                        choices=('BaseConvNet','VGG', 'ResNet', 'BaseConvNet2'),
                         help='the model architecture to use during training')
+    parser.add_argument('--aug-min-crop', type=float, default=0.08,
+                        help='the minimum crop scale fraction')
 
     args = parser.parse_args()
     return args
@@ -69,7 +79,7 @@ def create_dataloaders(args):
     train_dataset = datasets.ImageFolder(
         traindir,
         transforms.Compose([
-            transforms.RandomResizedCrop(64, scale=(0.5,1.0)),
+            transforms.RandomResizedCrop(64, scale=(args.aug_min_crop,1.0)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             normalize,
@@ -100,15 +110,26 @@ def create_dataloaders(args):
 
     return train_loader, val_loader, test_loader
 
+def get_learning_rate(optimizer):
+    for param_group in optimizer.param_groups:
+        return param_group['lr']
+
 def train(args, model, device, train_val_loaders, optimizer, experiment):
     train_loader, val_loader = train_val_loaders
     max_val_acc = 0
+    val_acc = 0
 
     # load saved model, if any.
     if args.saved_model_path:
         model.load(args.saved_model_path)
 
+    # set up learning rate scheduler
+    # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
+            # mode='max', verbose=True, patience=10)
+
     # train for all epochs
+    train_logs = []
+    valid_logs = []
     for epoch in range(1, args.epochs + 1):
         # log current epoch number on comet
         experiment.log_current_epoch(epoch)
@@ -116,6 +137,7 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
         correct = 0
         total = 0
         # train for all minibatches
+        # scheduler.step(val_acc)
         for batch_idx, (data, target) in enumerate(train_loader):
             cur_step = epoch * batch_idx
 
@@ -123,7 +145,8 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
             output = model(data)
-            loss = F.nll_loss(output, target)
+            #loss = F.nll_loss(output, target)
+            loss = F.cross_entropy(output, target)
             loss.backward()
             optimizer.step()
 
@@ -134,12 +157,15 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
             acc = 100. * correct / total
 
             # log to comet.ml
+            experiment.log_metric("learning_rate",
+                    get_learning_rate(optimizer), step=cur_step)
             experiment.log_metric("train_loss", loss.item(), step=cur_step)
             experiment.log_metric("train_accuracy",  acc.item(), step=cur_step)
+            train_logs.append((cur_step, acc.item(), loss.item()))
 
             if batch_idx % args.log_interval == 0:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tAccuracy: {:.6f}'.format(
-                    epoch, batch_idx * len(data), len(train_loader.dataset),
+                print('Train Epoch: {} of {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}\tAccuracy: {:.6f}'.format(
+                    epoch, args.epochs, batch_idx * len(data), len(train_loader.dataset),
                     100. * batch_idx / len(train_loader), loss.item(), acc.item()))
 
                 # evaluate on valid set and always keep copy of best model.
@@ -159,6 +185,7 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
 
                 experiment.log_metric("validation_loss", val_loss, step=cur_step)
                 experiment.log_metric("validation_accuracy", val_acc, step=cur_step)
+                valid_logs.append((cur_step, val_acc, val_loss))
 
                 print('\tValidation set: loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)'.format(
                     val_loss, val_correct, len(val_loader.dataset), val_acc))
@@ -170,6 +197,11 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
                     model_path = "output/" + args.model + "/saved_model.pt"
                     model.save(model_path)
                     experiment.log_asset(model_path, overwrite=True)
+    log_file_path = 'output/' + args.model + '/' + experiment.get_key() + '/logs.pkl'
+    joblib.dump((train_logs, valid_logs), log_file_path)
+    print('Training logs were written to: ', log_file_path)
+
+    return max_val_acc
 
 def test(args, model, device, test_loader):
 
@@ -206,17 +238,18 @@ def test(args, model, device, test_loader):
 
     # save predictions
     predictions = torch.cat(predictions, 0)
-    save_predictions(img_names, predictions)
+    save_predictions(args, img_names, predictions)
 
-def save_predictions(img_names, predictions):
+def save_predictions(args, img_names, predictions):
     print('Saving predictions...')
+    preds_path = "output/" + args.model + "/predictions.csv"
 
     img_names = np.array(img_names)
     predictions = predictions.cpu().numpy().flatten()
     result = dict(zip(img_names, predictions))  # combine image name and prediction into a dictionary.
     class_dict = {0: 'Cat', 1: 'Dog'}
 
-    with open('output/predictions.csv', 'w', newline='\n') as csvfile:
+    with open(preds_path, 'w', newline='\n') as csvfile:
         csvwriter = csv.writer(csvfile, delimiter=',')
         csvwriter.writerow(['id', 'label'])
 
@@ -224,6 +257,23 @@ def save_predictions(img_names, predictions):
             id = str(i+1)
             label = result[id]
             csvwriter.writerow([id, class_dict[label]])
+
+def tune_hyperparams():
+    api_key = "w7QuiECYXbNiOozveTpjc9uPg"
+    optimizer = comet_ml.Optimizer(api_key)
+
+    # hyperparameters in PCS format
+    params = """
+    x integer [1, 10] [10]
+    """
+    optimizer.set_params(params)
+
+    while True:
+        suggestion = optimizer.get_suggestion()
+        experiment = Experiment(api_key, project_name="project1-ac2g",
+                workspace="ift6135")
+        score = train(suggestion["x"])
+        suggestion.report_score("accuracy", score)
 
 def main():
     # Training settings
@@ -238,11 +288,12 @@ def main():
     random.seed(args.seed)
     torch.backends.cudnn.deterministic = True
 
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device = torch.device("cuda:1" if use_cuda else "cpu")
 
     train_loader, val_loader, test_loader = create_dataloaders(args)
 
     # get instance of model.
+    print('Loading the {0} model...'.format(args.model))
     model_class = models.find_model(args.model)
     model = model_class().to(device)
     optimizer = optim.SGD(model.parameters(), lr=args.lr)
@@ -252,6 +303,7 @@ def main():
 
         #set up logging.
         experiment = Experiment(api_key="w7QuiECYXbNiOozveTpjc9uPg", project_name="project1-ac2g", workspace="ift6135")
+        create_folder('output/' + args.model + '/' + experiment.get_key())
         hyper_params = vars(args)
         experiment.log_parameters(hyper_params)
 
