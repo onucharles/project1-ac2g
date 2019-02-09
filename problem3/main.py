@@ -126,6 +126,7 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
     # set up learning rate scheduler
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
             # mode='max', verbose=True, patience=10)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
 
     # train for all epochs
     train_logs = []
@@ -138,6 +139,7 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
         total = 0
         # train for all minibatches
         # scheduler.step(val_acc)
+        scheduler.step()
         for batch_idx, (data, target) in enumerate(train_loader):
             cur_step = epoch * batch_idx
 
@@ -297,6 +299,9 @@ def main():
     model_class = models.find_model(args.model)
     model = model_class().to(device)
     optimizer = optim.SGD(model.parameters(), lr=args.lr)
+
+    no_of_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    print('Model has {0} parameters'.format(no_of_params))
 
     if args.mode == 'train':
         print('Running in train mode...')
