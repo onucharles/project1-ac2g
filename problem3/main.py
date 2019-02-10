@@ -126,9 +126,10 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
     # set up learning rate scheduler
     # scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer,
             # mode='max', verbose=True, patience=10)
-    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
+    # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=50, gamma=0.1)
 
     # train for all epochs
+    cur_step = 0
     train_logs = []
     valid_logs = []
     for epoch in range(1, args.epochs + 1):
@@ -139,9 +140,9 @@ def train(args, model, device, train_val_loaders, optimizer, experiment):
         total = 0
         # train for all minibatches
         # scheduler.step(val_acc)
-        scheduler.step()
+        # scheduler.step()
         for batch_idx, (data, target) in enumerate(train_loader):
-            cur_step = epoch * batch_idx
+            cur_step += 1
 
             model.train()
             data, target = data.to(device), target.to(device)
