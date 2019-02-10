@@ -1,3 +1,7 @@
+"""
+Main file for training and testing models on the image classification task.
+"""
+
 from __future__ import print_function
 import comet_ml
 from comet_ml import Experiment
@@ -14,25 +18,20 @@ import random
 import numpy as np
 import models
 from sklearn.externals import joblib
-
-class ImageFolderWithPaths(datasets.ImageFolder):
-    """Custom dataset that includes image file paths. Extends
-    torchvision.datasets.ImageFolder
-    """
-
-    # override the __getitem__ method. this is the method dataloader calls
-    def __getitem__(self, index):
-        original_tuple = super(ImageFolderWithPaths, self).__getitem__(index)
-        path = self.imgs[index][0]
-        tuple_with_path = (original_tuple + (path,))
-        return tuple_with_path
+from utils import ImageFolderWithPaths
 
 def create_folder(newpath):
+    """
+    Creates a folder in the file system at the specified path.
+    """
     if not os.path.exists(newpath):
         os.makedirs(newpath)
         print("created directory: " + str(newpath))
 
 def configure_arguments():
+    """
+    Configures command line arguments for running this code file.
+    """
     parser = argparse.ArgumentParser(description='PyTorch Cat/Dog classification project')
     parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                         help='input batch size for training (default: 64)')
@@ -65,7 +64,7 @@ def configure_arguments():
 
 def create_dataloaders(args):
     """
-    Create pytorch data loaders for training and validation set.
+    Create pytorch data loaders for training, validation and test sets.
     Note that data must already be arranged in 2 sub-folders: 'trainset' and 'valset'.
     """
 
