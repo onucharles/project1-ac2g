@@ -18,7 +18,7 @@ import random
 import numpy as np
 import models
 from sklearn.externals import joblib
-from utils import ImageFolderWithPaths
+from utils.ImageFolderWithPaths import ImageFolderWithPaths
 
 def create_folder(newpath):
     """
@@ -54,7 +54,8 @@ def configure_arguments():
     parser.add_argument('--mode', type=str, default='train',
                         choices=('train', 'test'))
     parser.add_argument('--model', type=str, default='BaseConvNet',
-                        choices=('BaseConvNet','VGG', 'ResNet', 'BaseConvNet2'),
+                        choices=('BaseConvNet', 'ResNet', 'BaseConvNet2',
+                            'BaseConvNet3', 'BaseConvNet4', 'ResNet1'),
                         help='the model architecture to use during training')
     parser.add_argument('--aug-min-crop', type=float, default=0.08,
                         help='the minimum crop scale fraction')
