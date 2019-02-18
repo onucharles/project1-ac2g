@@ -57,40 +57,62 @@ class BaseConvNet2(SerializableModule):
         x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
-# source: https://github.com/kuangliu/pytorch-cifar/blob/master/models/vgg.py
-class VGG(SerializableModule):
-    def __init__(self, vgg_name='VGG7'):
-        super(VGG, self).__init__()
-        self.features = self._make_layers(vgg_config[vgg_name])
-        self.classifier = nn.Linear(16384, 2)
+class BaseConvNet3(SerializableModule):
+    def __init__(self):
+        super(BaseConvNet3, self).__init__()
+        self.conv1 = nn.Conv2d(3, 64, 3, 1)
+        self.conv2 = nn.Conv2d(64, 64, 3, 1)
+        self.conv3 = nn.Conv2d(64, 128, 3, 1)
+        self.conv4 = nn.Conv2d(128, 128, 3, 1)
+        self.conv5 = nn.Conv2d(128, 256, 3, 1)
+        self.conv6 = nn.Conv2d(256, 256, 3, 1)
+        self.fc1 = nn.Linear(5*5*256, 256)
+        self.fc2 = nn.Linear(256, 2)
 
     def forward(self, x):
-        out = self.features(x)
-        out = out.view(out.size(0), -1)
-        out = self.classifier(out)
-        return F.log_softmax(out, dim=1)
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.conv4(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv5(x))
+        #x = F.relu(self.conv6(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(x.size(0), -1)
 
-    def _make_layers(self, cfg):
-        layers = []
-        in_channels = 3
-        for x in cfg:
-            if x == 'M':
-                layers += [nn.MaxPool2d(kernel_size=2, stride=2)]
-            else:
-                layers += [nn.Conv2d(in_channels, x, kernel_size=3, padding=1),
-                           nn.BatchNorm2d(x),
-                           nn.ReLU(inplace=True)]
-                in_channels = x
-        layers += [nn.AvgPool2d(kernel_size=1, stride=1)]
-        return nn.Sequential(*layers)
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
 
-vgg_config = {
-    'VGG7': [64, 'M', 128, 128, 'M', 256, 256, 'M'],
-    'VGG11': [64, 'M', 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'VGG13': [64, 64, 'M', 128, 128, 'M', 256, 256, 'M', 512, 512, 'M', 512, 512, 'M'],
-    'VGG16': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512, 'M', 512, 512, 512, 'M'],
-    'VGG19': [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 256, 'M', 512, 512, 512, 512, 'M', 512, 512, 512, 512, 'M'],
-}
+class BaseConvNet4(SerializableModule):
+    def __init__(self):
+        super(BaseConvNet4, self).__init__()
+        self.conv1 = nn.Conv2d(3, 64, 3, 1)
+        self.conv2 = nn.Conv2d(64, 64, 3, 1)
+        self.conv3 = nn.Conv2d(64, 128, 3, 1)
+        self.conv4 = nn.Conv2d(128, 128, 3, 1)
+        self.conv5 = nn.Conv2d(128, 256, 3, 1)
+        self.conv6 = nn.Conv2d(256, 256, 3, 1)
+        self.fc1 = nn.Linear(4*4*256, 256)
+        self.fc2 = nn.Linear(256, 2)
+
+    def forward(self, x):
+        x = F.relu(self.conv1(x))
+        x = F.relu(self.conv2(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv3(x))
+        x = F.relu(self.conv4(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = F.relu(self.conv5(x))
+        x = F.relu(self.conv6(x))
+        x = F.max_pool2d(x, 2, 2)
+        x = x.view(x.size(0), -1)
+
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
 
 # source: https://github.com/MaximumEntropy/welcome_tutorials/blob/pytorch/
 class ResidualBlock(nn.Module):
@@ -104,14 +126,14 @@ class ResidualBlock(nn.Module):
             in_channels=in_channels, out_channels=out_channels,
             kernel_size=(3, 3), stride=stride, padding=1, bias=False
         )
-        self.bn1 = nn.BatchNorm2d(out_channels)
+        # self.bn1 = nn.BatchNorm2d(out_channels)
 
         # Conv Layer 2
         self.conv2 = nn.Conv2d(
             in_channels=out_channels, out_channels=out_channels,
             kernel_size=(3, 3), stride=1, padding=1, bias=False
         )
-        self.bn2 = nn.BatchNorm2d(out_channels)
+        # self.bn2 = nn.BatchNorm2d(out_channels)
 
         # Shortcut connection to downsample residual
         self.shortcut = nn.Sequential()
@@ -121,27 +143,29 @@ class ResidualBlock(nn.Module):
                     in_channels=in_channels, out_channels=out_channels,
                     kernel_size=(1, 1), stride=stride, bias=False
                 ),
-                nn.BatchNorm2d(out_channels)
+                # nn.BatchNorm2d(out_channels)
             )
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
-        out = self.bn2(self.conv2(out))
+        # out = F.relu(self.bn1(self.conv1(x)))
+        # out = self.bn2(self.conv2(out))
+        out = F.relu(self.conv1(x))
+        out = self.conv2(out)
         out += self.shortcut(x)
         out = F.relu(out)
         return out
 
 # adapted from https://github.com/MaximumEntropy/welcome_tutorials/blob/pytorch/
-class ResNet(SerializableModule):
+class ResNet1(SerializableModule):
     def __init__(self, num_classes=2):
-        super(ResNet, self).__init__()
+        super(ResNet1, self).__init__()
 
         # Initial input conv
         self.conv1 = nn.Conv2d(
             in_channels=3, out_channels=64, kernel_size=(3, 3),
             stride=1, padding=1, bias=False
         )
-        self.bn1 = nn.BatchNorm2d(64)
+        # self.bn1 = nn.BatchNorm2d(64)
 
         # Create stages 1-4
         self.stage1 = self._create_stage(64, 64, stride=1)
@@ -158,7 +182,8 @@ class ResNet(SerializableModule):
         )
 
     def forward(self, x):
-        out = F.relu(self.bn1(self.conv1(x)))
+        #out = F.relu(self.bn1(self.conv1(x)))
+        out = F.relu(self.conv1(x))
         out = self.stage1(out)
         out = self.stage2(out)
         out = self.stage3(out)
@@ -169,43 +194,17 @@ class ResNet(SerializableModule):
         return F.log_softmax(out, dim=1)
 
 def find_model(model_str):
-    if model_str == 'VGG':
-        return VGG
-    elif model_str == 'BaseConvNet':
+    if model_str == 'BaseConvNet':
         return BaseConvNet
     elif model_str == 'ResNet':
         return ResNet
     elif model_str == 'BaseConvNet2':
         return BaseConvNet2
+    elif model_str == 'BaseConvNet3':
+        return BaseConvNet3
+    elif model_str == 'BaseConvNet4':
+        return BaseConvNet4
+    elif model_str == 'ResNet1':
+        return ResNet1
     else:
         raise("No model with name '" + model_str + "' was found.")
-
-
-# class MyConvNet(SerializableModule):
-#     def __init__(self):
-#         super(MyConvNet, self).__init__()
-#         self.conv1 = nn.Conv2d(3, 48, 3, 1)
-#         self.conv2 = nn.Conv2d(48, 48, 3, 1)
-#         self.fc1 = nn.Linear(13*13*48, 256)
-#         self.fc2 = nn.Linear(256, 2)
-#
-#     def forward(self, x):
-#         # 2 convs, 1 maxpool
-#         x = F.relu(self.conv1(x))
-#         x = F.relu(self.conv2(x))
-#         x = F.max_pool2d(x, 2, 2)
-#
-#         # 2 convs, 1 maxpool
-#         x = F.relu(self.conv2(x))
-#         x = F.relu(self.conv2(x))
-#         x = F.max_pool2d(x, 2, 2)
-#
-#         # 2 convs, 1 maxpool
-#         # x = F.relu(self.conv2(x))
-#         # x = F.relu(self.conv2(x))
-#         # x = F.max_pool2d(x, 2, 2)
-#
-#         x = x.view(-1, 13*13*48)
-#         x = F.relu(self.fc1(x))
-#         x = self.fc2(x)
-#         return F.log_softmax(x, dim=1)
